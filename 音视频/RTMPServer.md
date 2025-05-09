@@ -409,6 +409,113 @@ void EventLoop::Loop()
 
 #### Epoll
 
+**功能**
+
+- 通过 Linux 的 `epoll` 机制监听多个文件描述符（如 Socket）的 I/O 事件，触发对应的回调处理。
+- 支持动态添加、修改、删除监听通道（`Channel`）。
+
+**核心方法**
+
+构造方法，`epoll` 实例的文件描述符，通过 `epoll_create(1024)` 初始化。
+
+```c
+#include <sys/epoll.h>
+
+EpollTaskScheduler::EpollTaskScheduler(int id)
+	: TaskScheduler(id)
+{
+#if defined(__linux) || defined(__linux__) 
+    epollfd_ = epoll_create(1024);
+ #endif
+    this->UpdateChannel(wakeup_channel_);
+}
+```
+
+UpdateChannel，添加或更新通道的事件监听（`EPOLL_CTL_ADD/MOD`）
+
+```cpp
+void EpollTaskScheduler::UpdateChannel(ChannelPtr channel)
+{
+	std::lock_guard<std::mutex> lock(mutex_);
+#if defined(__linux) || defined(__linux__) 
+	int fd = channel->GetSocket();
+	if(channels_.find(fd) != channels_.end()) {
+		if(channel->IsNoneEvent()) {
+			Update(EPOLL_CTL_DEL, channel);
+			channels_.erase(fd);
+		}
+		else {
+			Update(EPOLL_CTL_MOD, channel);
+		}
+	}
+	else {
+		if(!channel->IsNoneEvent()) {
+			channels_.emplace(fd, channel);
+			Update(EPOLL_CTL_ADD, channel);
+		}	
+	}	
+#endif
+}
+```
+
+RemoveChannel，移除通道的监听（`EPOLL_CTL_DEL`）
+
+```cpp
+void EpollTaskScheduler::RemoveChannel(ChannelPtr& channel)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+#if defined(__linux) || defined(__linux__) 
+	int fd = channel->GetSocket();
+
+	if(channels_.find(fd) != channels_.end()) {
+		Update(EPOLL_CTL_DEL, channel);
+		channels_.erase(fd);
+	}
+#endif
+}
+```
+
+HandleEvent，阻塞等待事件触发（`epoll_wait`），并调用对应的 `Channel->HandleEvent`
+
+```cpp
+bool EpollTaskScheduler::HandleEvent(int timeout)
+{
+#if defined(__linux) || defined(__linux__) 
+	struct epoll_event events[512] = {0};
+	int num_events = -1;
+
+	num_events = epoll_wait(epollfd_, events, 512, timeout);
+	if(num_events < 0)  {
+		if(errno != EINTR) {
+			return false;
+		}								
+	}
+
+	for(int n=0; n<num_events; n++) {
+		if(events[n].data.ptr) {        
+			((Channel *)events[n].data.ptr)->HandleEvent(events[n].events);
+		}
+	}		
+	return true;
+#else
+    return false;
+#endif
+}
+```
+
+epoll 操作封装
+
+```cpp
+void Update(int operation, ChannelPtr& channel) {
+    struct epoll_event event = {0};
+    if (operation != EPOLL_CTL_DEL) {
+        event.data.ptr = channel.get();  // 保存 Channel 指针
+        event.events = channel->GetEvents();  // 监听的事件（如 EPOLLIN/EPOLLOUT）
+    }
+    epoll_ctl(epollfd_, operation, channel->GetSocket(), &event);
+}
+```
+
 
 
 #### Select

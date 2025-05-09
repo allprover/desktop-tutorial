@@ -40,10 +40,214 @@ I/O 多路复用技术是为了解决：在并发式 I/O 场景中进程或线�
 
 ## 1. select() 函数
 
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+
+#include<fcntl.h>
+#include<unistd.h>
+#include<sys/select.h>
+
+#define MOUSE "/dev/input/event3"
+
+int main(void){
+    char buf[100];
+    int fd, ret = 0, flag;
+    fd_set rdfds;
+    int loops = 5;
+
+    /* 打开鼠标设备文件 */
+    fd = open(MOUSE, O_RDONLY | O_NONBLOCK);
+    if(-1 == fd){
+        perror("open error");
+        exit(-1);
+    }
+
+    /* 将键盘设置为非阻塞方式*/
+    flag = fcntl(0, F_GETFL);   //先获取原来的 flag
+    flag |= O_NONBLOCK;         //将 O_NONBLOCK 标准添加到 flag
+    fcntl(0, F_SETFL, flag);    //重新设置 flag
+
+    /* 同时读取键盘和鼠标*/
+    while(loops--){
+        FD_ZERO(&rdfds);
+        FD_SET(0, &rdfds);      //键盘属于标准输入，0就是其文件标识符
+        FD_SET(fd, &rdfds);     //添加鼠标
+
+        ret = select(fd + 1, &rdfds, NULL, NULL, NULL);
+
+        //两种非正常的返回
+        if(0>ret){
+            perror("select error");
+            goto out;
+        }
+        else if (0 == ret)
+        {
+            fprintf(stderr, "select timeout.\n");
+            continue;
+        }
+
+        /* 检查键盘是否为就绪态*/
+        if(FD_ISSET(0, &rdfds)){
+            ret = read(0, buf, sizeof(buf));
+            if(0<ret)
+                printf("键盘： 成功读取<%d>个字节数据\n", ret);
+        }
+
+        /* 检查鼠标是否为就绪态 */
+        if(FD_ISSET(fd, &rdfds)){
+            ret = read(fd, buf, sizeof(buf));
+            if(0<ret)
+                printf("鼠标: 成功读取<%d>个字节数据\n", ret);
+        }
+        
+    }
+
+out: 
+    close(fd);
+    exit(ret);
+} 
+
+
+```
+
 
 
 ## 2. poll() 函数
 
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+
+#include <fcntl.h>
+#include <unistd.h>
+#include <poll.h>
+
+#define MOUSE "/dev/input/event3"
+
+int main(void){
+    char buf[100];
+    int fd, ret = 0, flag;
+    int loops = 5; 
+    struct pollfd fds[2];
+    
+    /* 打开鼠标设备文件*/
+    fd = open(MOUSE, O_RDONLY | O_NONBLOCK);
+    if(-1 == fd){
+        perror("open error");
+        exit(-1);
+    }
+    /* 将键盘设置为非阻塞*/
+    flag = fcntl(0, F_GETFL);
+    flag |= O_NONBLOCK;
+    fcntl(0, F_SETFL, flag);
+
+    /* 同时读取键盘和鼠标 */
+    fds[0].fd = 0;
+    fds[0].events = POLLIN;     //只关心数据可读
+    fds[0].revents = 0;
+
+    fds[1].fd = fd;
+    fds[1].events = POLLIN;
+    fds[1].revents = 0;
+
+    while(loops--){
+        ret = poll(fds, 2, -1);
+        if(0>ret){
+            perror("poll error");
+            goto out;
+        }
+        else if (0 == ret){
+            fprintf(stderr, "poll timeout.\n");
+            continue;
+        }
+
+        /* 检查键盘是否就绪*/
+        if(fds[0].revents & POLLIN){
+            ret = read(0, buf, sizeof(buf));
+            if(0 < ret){
+                printf("键盘: 成功读取<%d>个字节数据\n", ret);
+            }
+        }
+
+        /* 检查鼠标是否就绪*/
+        if(fds[1].revents & POLLIN){
+            ret = read(fd, buf, sizeof(buf));
+            if(0 < ret){
+                printf("鼠标: 成功读取<%d>个字节数据\n", ret);
+            }
+        }
+    }
+out:
+    close(fd);
+    exit(ret);
+}
+```
+
 
 
 # 三、异步I/O
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+#include <signal.h>
+
+#define MOUSE "/dev/input/event3"
+
+static int fd;
+
+static void sigio_handler(int sig)
+{
+    static int loops = 5;
+    char buf[100] = {0};
+    int ret;
+
+    if(SIGIO != sig)
+        return;
+    ret = read(fd, buf, sizeof(buf));
+    if(0<ret)
+        printf("鼠标: 成功读取<%d>个字节数据\n", ret);
+
+    loops--;
+    if(0>=loops){
+        close(fd);
+        exit(0);
+    }
+
+}
+
+int main(void){
+    int flag;
+
+    fd = open(MOUSE, O_RDONLY | O_NONBLOCK);
+    if(-1 == fd){
+        perror("open error");
+        exit(-1);
+    }
+
+    /* 使能异步 IO*/
+    flag = fcntl(fd, F_GETFL);
+    flag |= O_ASYNC;
+    fcntl(fd, F_SETFL, flag);
+
+    /* 设置异步IO的所有者*/
+    fcntl(fd, __F_SETOWN, getpid());
+
+    /* 为SIGIO信号注册信号处理函数*/
+    signal(SIGIO, sigio_handler);
+
+    for(;;)
+        sleep(1);
+}
+```
+
