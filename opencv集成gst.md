@@ -30,13 +30,33 @@ set(CMAKE_SYSROOT "/home/elf/aarch64-buildroot-linux-gnu_sdk-buildroot/aarch64-b
 
 ### 检查sysroot中的Gstreamer
 
-```
+```bash
 # 在主机上检查sysroot中的GStreamer
 ls /home/elf/aarch64-buildroot-linux-gnu_sdk-buildroot/aarch64-buildroot-linux-gnu/sysroot/usr/lib/libgstreamer*
 ls /home/elf/aarch64-buildroot-linux-gnu_sdk-buildroot/aarch64-buildroot-linux-gnu/sysroot/usr/include/gstreamer-1.0
 ```
 
-### 开启Gstreamer支持
+
+
+### **验证pkg-config配置**
+
+```bash
+ls /home/elf/aarch64-buildroot-linux-gnu_sdk-buildroot/aarch64-buildroot-linux-gnu/sysroot/usr/lib/pkgconfig/gstreamer-1.0.pc
+```
+
+
+
+### **设置交叉编译的pkg-config环境**
+
+```bash
+export PKG_CONFIG_PATH=/home/elf/aarch64-buildroot-linux-gnu_sdk-buildroot/aarch64-buildroot-linux-gnu/sysroot/usr/lib/pkgconfig
+export PKG_CONFIG_SYSROOT_DIR=/home/elf/aarch64-buildroot-linux-gnu_sdk-buildroot/aarch64-buildroot-linux-gnu/sysroot
+export PKG_CONFIG_LIBDIR=${PKG_CONFIG_PATH}
+```
+
+
+
+### OpenCV开启Gstreamer支持
 
 ```bash
 cmake -DCMAKE_TOOLCHAIN_FILE=../rk3588_toolchain.cmake \
@@ -52,19 +72,5 @@ cmake -DCMAKE_TOOLCHAIN_FILE=../rk3588_toolchain.cmake \
 -DWITH_GSTREAMER_0_10=OFF \
 -DWITH_FFMPEG=OFF \
 ..
-```
-
-### **验证pkg-config配置**
-
-```
-ls /home/elf/aarch64-buildroot-linux-gnu_sdk-buildroot/aarch64-buildroot-linux-gnu/sysroot/usr/lib/pkgconfig/gstreamer-1.0.pc
-```
-
-### **设置交叉编译的pkg-config环境**
-
-```bash
-export PKG_CONFIG_PATH=/home/elf/aarch64-buildroot-linux-gnu_sdk-buildroot/aarch64-buildroot-linux-gnu/sysroot/usr/lib/pkgconfig
-export PKG_CONFIG_SYSROOT_DIR=/home/elf/aarch64-buildroot-linux-gnu_sdk-buildroot/aarch64-buildroot-linux-gnu/sysroot
-export PKG_CONFIG_LIBDIR=${PKG_CONFIG_PATH}
 ```
 
